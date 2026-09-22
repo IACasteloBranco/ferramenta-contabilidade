@@ -24,7 +24,7 @@ npm run assess -- --input fixtures/dominio-batch/2026-08 --output output/simples
 
 Também é possível abrir a interface local e acessar **Apurações Simples**. A tela inicia com as fixtures e permite informar outra pasta da competência. A saída inclui a lista consolidada, os motivos, fontes, valores usados e um download JSON.
 
-A estrutura de entrada futura é:
+A estrutura de entrada para várias empresas é:
 
 ```text
 input/
@@ -35,7 +35,7 @@ input/
       resumo_acumuladores.pdf
 ```
 
-Para o protótipo, os mesmos nomes usam `.json` ou `.synthetic.json`. Cada JSON declara `document_type`, `company`, `period`, `data` e `extraction`. O scanner reconhece PDFs pelo nome e os cataloga, mas não tenta interpretar seu conteúdo.
+Para o protótipo, os mesmos nomes também usam `.json` ou `.synthetic.json`. Cada JSON declara `document_type`, `company`, `period`, `data` e `extraction`. Para uma empresa, a pasta informada pode conter diretamente `Simples Nacional.pdf` e `Demonstrativo Mensal.pdf`; a competência deve ser informada na interface ou por `--period` na CLI. Arquivos de extrato PGDAS-D e guia DAS não entram nas regras atuais.
 
 ## Modelo normalizado
 
@@ -44,7 +44,7 @@ Para o protótipo, os mesmos nomes usam `.json` ou `.synthetic.json`. Cada JSON 
 - `company`: id, código, nome e documento quando disponíveis;
 - `period`;
 - `revenue`: faturamento do período, RBT12, devoluções e cancelamentos;
-- `simples`: anexos, Fator R, valor calculado e alíquota efetiva quando constarem na fonte;
+- `simples`: anexos, Fator R, valor calculado, alíquota efetiva única quando houver e `segments` para as diferentes segregações da apuração;
 - `accumulators`;
 - `sources`: tipo, caminho, momento do processamento, hash, status e avisos;
 - `extraction`: estado consolidado e avisos;
@@ -60,9 +60,9 @@ Os tipos de relatório reconhecidos são `SIMPLES_APURACAO`, `FATURAMENTO_SIMPLE
 | --- | --- |
 | `SyntheticAssessmentExtractor` | Fixtures com extensão `.synthetic.json`. |
 | `JsonAssessmentExtractor` | Contrato JSON de intercâmbio e testes. |
-| `DominioPdfAssessmentExtractor` | Ponto de extensão; por enquanto devolve falha explícita, sem inferir layout. |
+| `DominioPdfAssessmentExtractor` | Lê os layouts observados de `Simples Nacional.pdf` e `Demonstrativo Mensal.pdf`; outros layouts retornam falha explícita. |
 
-As regras recebem somente `CompanyTaxAssessment`; elas não abrem arquivos nem dependem de PDFs. Quando houver PDF validado, o novo adaptador deverá produzir o mesmo `PartialAssessment` usado pelos JSONs.
+As regras recebem somente `CompanyTaxAssessment`; elas não abrem arquivos nem dependem de PDFs. O adaptador de PDF produz o mesmo `PartialAssessment` usado pelos JSONs. A página de alíquota do período seguinte é ignorada na extração da competência solicitada. Cancelamentos e devoluções ausentes não são presumidos como zero.
 
 ## Regras e classificação
 
@@ -94,9 +94,11 @@ As regras recebem somente `CompanyTaxAssessment`; elas não abrem arquivos nem d
 
 Por isso, o resultado demonstrável do conjunto completo é 8 empresas: 2 sem exceções detectadas, 5 para revisar e 1 erro. A distribuição diferente do exemplo conceitual da solicitação resulta da inclusão de todas as oito situações requeridas.
 
-## Aguardando PDFs reais do Domínio
+## Cobertura dos PDFs do Domínio
 
-Antes de implementar `DominioPdfAssessmentExtractor`, validar com arquivos autorizados e representativos:
+Os dois layouts observados são texto selecionável. O relatório `Simples Nacional.pdf` inclui apuração, memória de cálculo, listagem parcial de produtos, RBT12 e páginas do período seguinte. O `Demonstrativo Mensal.pdf` traz entradas, saídas e serviços; somente saídas e serviços formam a receita comparada pelo motor. A leitura foi validada com essa amostra de uma empresa, mas ainda precisa de variantes autorizadas para confirmar estabilidade de rótulos e paginação.
+
+Antes de ampliar o leitor, validar com mais arquivos autorizados e representativos:
 
 - texto selecionável ou imagem/OCR;
 - posição, rótulos e estabilidade dos campos;
@@ -106,11 +108,11 @@ Antes de implementar `DominioPdfAssessmentExtractor`, validar com arquivos autor
 - acumuladores, devoluções e cancelamentos;
 - se um mesmo relatório muda conforme regime, empresa ou versão do Domínio.
 
-Depois, mapear esses campos para o contrato JSON/`PartialAssessment`, adicionar fixtures extraídas de PDFs anonimizados e testes de regressão. Não adicionar regras de cálculo tributário ao adapter: ele só extrai fatos e sua origem.
+O layout do `Resumo por Acumulador` ainda precisa de amostra. Depois, mapear os códigos reais para o contrato JSON/`PartialAssessment` e adicionar fixtures extraídas de PDFs anonimizados. Não adicionar regras de cálculo tributário ao adaptador: ele só extrai fatos e sua origem.
 
 ## Limites atuais
 
 - Os valores e acumuladores são sintéticos e os códigos conhecidos são apenas do protótipo.
 - Não há consulta, autenticação ou escrita no Domínio, Thomson Reuters ou portais governamentais.
 - A ausência de exception significa somente ausência de exceções nas regras executadas e relatórios disponíveis.
-- PDFs são catalogados, mas ainda não são lidos.
+- Apenas os layouts observados de apuração e demonstrativo mensal são lidos; não há OCR nem conferência automática do extrato PGDAS-D ou da guia DAS.

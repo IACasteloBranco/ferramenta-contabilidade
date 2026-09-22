@@ -19,8 +19,11 @@ from .validation.results import classify
 
 NAME_TO_TYPE = {
     "simples_apuracao": DocumentType.SIMPLES_APURACAO,
+    "simples nacional": DocumentType.SIMPLES_APURACAO,
     "faturamento_simples": DocumentType.FATURAMENTO_SIMPLES,
+    "demonstrativo mensal": DocumentType.FATURAMENTO_SIMPLES,
     "resumo_acumuladores": DocumentType.RESUMO_ACUMULADORES,
+    "resumo por acumulador": DocumentType.RESUMO_ACUMULADORES,
 }
 
 
@@ -37,11 +40,13 @@ def _report_type(path: Path) -> DocumentType | None:
 
 
 def discover_sources(input_dir: Path) -> dict[str, list[SourceDocument]]:
-    """Cataloga a estrutura futura de relatórios, sem extrair texto de PDFs."""
+    """Encontra relatórios conhecidos em subpastas ou em uma pasta de empresa."""
     if not input_dir.is_dir():
         raise ValueError(f"Pasta de entrada não encontrada: {input_dir}")
     grouped: dict[str, list[SourceDocument]] = {}
-    for path in sorted(input_dir.rglob("*")):
+    direct_reports = [path for path in input_dir.iterdir() if path.is_file() and _report_type(path) is not None]
+    paths = direct_reports if direct_reports else input_dir.rglob("*")
+    for path in sorted(paths):
         if not path.is_file() or path.suffix.lower() not in {".json", ".pdf"}:
             continue
         document_type = _report_type(path)

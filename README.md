@@ -34,7 +34,7 @@ python3 -m venv .venv
 
 Abra http://127.0.0.1:8501, informe o diretório da competência e selecione **Analisar relatórios**.
 
-A estrutura de entrada planejada é:
+A estrutura para várias empresas é:
 
 ```text
 /dados/dominio/2026-08/
@@ -44,7 +44,7 @@ A estrutura de entrada planejada é:
     resumo_acumuladores.pdf
 ```
 
-Hoje, a interface aceita as fixtures JSON para demonstrar a análise completa. Os PDFs são identificados e catalogados por empresa e tipo de relatório, mas entram como erro de extração até que o adapter seja validado com amostras reais do Domínio.
+Para uma única empresa, também é possível informar diretamente a pasta que contém os PDFs e preencher a competência na tela. Os nomes `Simples Nacional.pdf` e `Demonstrativo Mensal.pdf`, usados pelo Domínio, são reconhecidos. O primeiro fornece receita, RBT12, anexos, segregações e valor apurado; o segundo fornece saídas e serviços do mês. O `Resumo por Acumulador.pdf` continua pendente de validação de layout, portanto sua ausência leva a empresa à fila de revisão. Extrato do PGDAS-D e guia DAS ainda não participam das regras automáticas.
 
 ## Linha de comando
 
@@ -63,6 +63,6 @@ npm test
 
 ## Próxima etapa
 
-Quando houver PDFs reais e autorizados, será implementado somente o `DominioPdfAssessmentExtractor`. O modelo normalizado, as regras, a classificação, o lote e a tela permanecem os mesmos. Veja o checklist em [DOMINIO_BATCH_ASSESSMENT.md](docs/DOMINIO_BATCH_ASSESSMENT.md).
+Validar o leitor com outros PDFs do Domínio e implementar o layout do Resumo por Acumulador quando houver amostra. Veja o checklist em [DOMINIO_BATCH_ASSESSMENT.md](docs/DOMINIO_BATCH_ASSESSMENT.md).
 
 O pipeline sintético anterior de NF-e foi preservado no código para referência e testes, mas não é exposto pela interface desta versão.

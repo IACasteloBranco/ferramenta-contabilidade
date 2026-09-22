@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
+from pypdf.errors import PdfReadError
+
+from .dominio_pdf import parse_pdf
 from .models import DocumentType, ExtractionStatus, SourceDocument
 
 
@@ -74,15 +77,25 @@ class SyntheticAssessmentExtractor(JsonAssessmentExtractor):
 
 
 class DominioPdfAssessmentExtractor:
-    """Ponto de extensão propositalmente sem parser até recebermos PDFs reais."""
+    """Lê os layouts validados de apuração e demonstrativo mensal do Domínio."""
 
     def supports(self, source: SourceDocument) -> bool:
         return Path(source.file_path).suffix.lower() == ".pdf"
 
     def extract(self, source: SourceDocument) -> PartialAssessment:
-        source.extraction_status = ExtractionStatus.FAILED
-        source.warnings = ["PDF do Domínio catalogado, mas não há adaptador validado para seu layout."]
-        return PartialAssessment(source, {}, None, {}, ExtractionStatus.FAILED, source.warnings)
+        path = Path(source.file_path)
+        try:
+            company, period, values, warnings = parse_pdf(path, source.document_type, source.period)
+            source.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            source.company_id = company["id"]
+            source.period = period
+            source.extraction_status = ExtractionStatus.PARTIAL if warnings else ExtractionStatus.COMPLETE
+            source.warnings = warnings
+            return PartialAssessment(source, company, period, values, source.extraction_status, warnings)
+        except (OSError, ValueError, PdfReadError) as exc:
+            source.extraction_status = ExtractionStatus.FAILED
+            source.warnings = [f"PDF do Domínio catalogado, mas não foi possível extrair seu layout: {exc}"]
+            return PartialAssessment(source, {}, None, {}, ExtractionStatus.FAILED, source.warnings)
 
 
 EXTRACTORS: list[AssessmentExtractor] = [SyntheticAssessmentExtractor(), JsonAssessmentExtractor(), DominioPdfAssessmentExtractor()]

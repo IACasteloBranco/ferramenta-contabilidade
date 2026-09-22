@@ -73,11 +73,12 @@ def simples_assessment_page(fixtures: Path) -> None:
             value=str(fixtures),
             help="Ex.: /dados/dominio/2026-08. Cada empresa deve ficar em sua própria subpasta.",
         )
-        st.caption("Estrutura esperada: `2026-08/001_EMPRESA/simples_apuracao.pdf`, `faturamento_simples.pdf` e `resumo_acumuladores.pdf`.")
+        period_value = st.text_input("Competência (AAAA-MM)", value=fixtures.name)
+        st.caption("Aceita os PDFs `Simples Nacional` e `Demonstrativo Mensal` do Domínio. Para várias empresas, use uma subpasta por empresa.")
         submitted = st.form_submit_button("Analisar relatórios", type="primary")
     if submitted:
         try:
-            st.session_state["simples_batch"] = assess_batch(Path(path_value))
+            st.session_state["simples_batch"] = assess_batch(Path(path_value), period_value)
             st.session_state["simples_path"] = path_value
         except (OSError, ValueError, TypeError) as exc:
             st.error(f"Não foi possível analisar a pasta: {exc}")
@@ -85,7 +86,7 @@ def simples_assessment_page(fixtures: Path) -> None:
 
     result = st.session_state.get("simples_batch")
     if not result:
-        st.markdown("<div class='quiet-state'><strong>Ainda não há uma análise nesta tela.</strong><br>Use as fixtures preenchidas para experimentar o fluxo. PDFs são catalogados, mas aguardam um adaptador validado com amostras reais do Domínio.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='quiet-state'><strong>Ainda não há uma análise nesta tela.</strong><br>Use as fixtures para experimentar o fluxo ou informe a pasta com os relatórios do Domínio.</div>", unsafe_allow_html=True)
         return
 
     summary = result["summary"]

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fiscal_engine.assessment.dominio_pdf import parse_monthly_pages, parse_simples_pages
 from fiscal_engine.assessment.extractors import extract
 from fiscal_engine.assessment.models import AssessmentStatus, DocumentType
 from fiscal_engine.assessment.normalization import normalize
@@ -65,6 +66,44 @@ class AssessmentRuleTests(unittest.TestCase):
         self.assertEqual(classify([]), AssessmentStatus.SEM_EXCECOES)
         self.assertEqual(classify(rbt12_required_rule(assessment_for("003_EMPRESA_C"))), AssessmentStatus.REVISAR)
         self.assertEqual(classify(extraction_status_rule(assessment_for("006_EMPRESA_F"))), AssessmentStatus.ERRO)
+
+
+class DominioPdfLayoutTests(unittest.TestCase):
+    def test_simples_page_keeps_multiple_rates_and_ignores_next_period(self):
+        current = """Empresa: EMPRESA TESTE                                      Página: 0001
+CNPJ: 11.111.111/0001-11
+Período: 08/2026
+Receita Bruta do período de Apuração (RPA) -
+Regime de Competência                    100,00          0,00          100,00
+ao período de apuração (RBT12)           2.000,00        0,00        2.000,00
+Anexo: Anexo I - Comércio
+Tabela: Tabela 1 - Sem substituição tributária
+Receita Tributada Total: 70,00 Alíquota: 5,000000 Simples Nacional Total: 3,50
+Anexo: Anexo I - Comércio
+Tabela: Tabela 4 - Substituição tributária
+Receita Tributada Total: 30,00 Alíquota: 3,000000 Simples Nacional Total: 0,90
+Simples Nacional a recolher: 4,40"""
+        next_period = current.replace("08/2026", "09/2026").replace("100,00", "900,00")
+        company, period, values, warnings = parse_simples_pages([next_period, current], "2026-08")
+        self.assertEqual((company["name"], period), ("EMPRESA TESTE", "2026-08"))
+        self.assertEqual(values["revenue"], {"currentPeriod": 100.0, "rbt12": 2000.0})
+        self.assertEqual([item["revenue"] for item in values["simples"]["segments"]], [70.0, 30.0])
+        self.assertIsNone(values["simples"]["effectiveRate"])
+        self.assertEqual(warnings, [])
+
+    def test_monthly_page_uses_sales_and_services_but_not_entries(self):
+        page = """Empresa: EMPRESA TESTE                         Emissão: 22/09/2026
+CNPJ: 11.111.111/0001-11
+Período: 01/08/2026 a 31/08/2026
+DEMONSTRATIVO MENSAL
+Mês Ano Entradas R$ Saídas R$ Serviços R$
+Agosto 2026 40,00 70,00 30,00"""
+        _, period, values, _ = parse_monthly_pages([page], "2026-08")
+        self.assertEqual(period, "2026-08")
+        self.assertEqual(values["revenue"]["currentPeriod"], 100.0)
+        self.assertEqual(values["monthly"]["entries"], 40.0)
+        with self.assertRaisesRegex(ValueError, "esperado 2026-09"):
+            parse_monthly_pages([page], "2026-09")
 
 
 class AssessmentBatchTests(unittest.TestCase):

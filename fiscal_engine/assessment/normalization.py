@@ -17,13 +17,15 @@ def _number(value: object) -> float | None:
 def normalize(partials: list[PartialAssessment], fallback_company: dict[str, str | None], period: str) -> CompanyTaxAssessment:
     company = dict(fallback_company)
     revenue = {"currentPeriod": None, "rbt12": None, "returns": None, "cancellations": None}
-    simples = {"annexes": None, "factorR": None, "calculatedAmount": None, "effectiveRate": None}
+    simples = {"annexes": None, "factorR": None, "calculatedAmount": None, "effectiveRate": None,
+               "segments": []}
     accumulators: list[dict] = []
     source_values: dict[str, dict] = {}
     field_sources: dict[str, list[str]] = {}
     warnings: list[str] = []
     statuses = []
     sources = []
+    identified_company: dict[str, str] = {}
 
     for partial in partials:
         source = partial.source
@@ -33,8 +35,13 @@ def normalize(partials: list[PartialAssessment], fallback_company: dict[str, str
         if partial.company:
             for key in ("id", "code", "name", "document"):
                 value = partial.company.get(key)
-                if value is not None and not company.get(key):
-                    company[key] = str(value)
+                if value is not None:
+                    value = str(value)
+                    if key in identified_company and identified_company[key] != value:
+                        warnings.append(f"Divergência de {key} entre os relatórios da empresa.")
+                    elif key not in identified_company:
+                        company[key] = value
+                        identified_company[key] = value
         if partial.period and partial.period != period:
             warnings.append(f"Competência {partial.period} no relatório {source.document_type}; esperado {period}.")
         values = partial.values
@@ -64,6 +71,15 @@ def normalize(partials: list[PartialAssessment], fallback_company: dict[str, str
             for key in simples:
                 if key in source_simples:
                     value = source_simples[key]
+                    if key == "segments":
+                        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+                            source.extraction_status = ExtractionStatus.FAILED
+                            statuses[-1] = ExtractionStatus.FAILED
+                            warnings.append(f"Segregações inválidas em {source.document_type}.")
+                            continue
+                        simples["segments"].extend(value)
+                        field_sources.setdefault("simples.segments", []).append(source.document_type)
+                        continue
                     if key != "annexes":
                         try:
                             value = _number(value)
