@@ -10,6 +10,11 @@ import streamlit as st
 from fiscal_engine.assessment.service import assess_batch
 
 
+def _html(markup: str) -> str:
+    """Mantém textos HTML legíveis mesmo quando o navegador erra a codificação."""
+    return markup.encode("ascii", "xmlcharrefreplace").decode("ascii")
+
+
 def _money(value: float | None) -> str:
     if value is None:
         return "-"
@@ -51,7 +56,7 @@ def _details(companies: list[dict]) -> None:
 
 
 def simples_assessment_page(fixtures: Path) -> None:
-    st.markdown(
+    st.markdown(_html(
         """
         <section class="hero" aria-label="Apresentação da conferência">
           <div class="hero-copy">
@@ -66,21 +71,21 @@ def simples_assessment_page(fixtures: Path) -> None:
             <div class="ledger-step"><strong>3</strong><span>Direcione somente as exceções para revisão.</span></div>
           </aside>
         </section>
-        """,
+        """),
         unsafe_allow_html=True,
     )
-    st.markdown(
+    st.markdown(_html(
         """
         <section class="explainer">
           <h2>Uma pausa de conferência antes da entrega.</h2>
           <p>O DAS reúne em uma única guia os tributos da empresa no Simples. Sua apuração parte das receitas e das informações da competência. Esta ferramenta não emite a guia nem recalcula impostos: ela compara os relatórios de apuração, faturamento e acumuladores para tornar visíveis divergências e ausências que merecem uma decisão da equipe contábil.</p>
         </section>
-        """,
+        """),
         unsafe_allow_html=True,
     )
     st.info("A ferramenta verifica a consistência entre os relatórios disponíveis; ela não recalcula tributos, não substitui o Domínio e não certifica a apuração tributária.")
 
-    st.markdown('<h2 class="section-heading">Comece por uma competência</h2><p class="section-intro">Informe a pasta que contém uma subpasta para cada empresa do lote.</p>', unsafe_allow_html=True)
+    st.markdown(_html('<h2 class="section-heading">Comece por uma competência</h2><p class="section-intro">Informe a pasta que contém uma subpasta para cada empresa do lote.</p>'), unsafe_allow_html=True)
     with st.form("assessment_input"):
         path_value = st.text_input(
             "Diretório raiz da competência",
@@ -100,7 +105,7 @@ def simples_assessment_page(fixtures: Path) -> None:
 
     result = st.session_state.get("simples_batch")
     if not result:
-        st.markdown("<div class='quiet-state'><strong>Ainda não há uma análise nesta tela.</strong><br>Use as fixtures para experimentar o fluxo ou informe a pasta com os relatórios do Domínio.</div>", unsafe_allow_html=True)
+        st.markdown(_html("<div class='quiet-state'><strong>Ainda não há uma análise nesta tela.</strong><br>Use as fixtures para experimentar o fluxo ou informe a pasta com os relatórios do Domínio.</div>"), unsafe_allow_html=True)
         return
 
     summary = result["summary"]
