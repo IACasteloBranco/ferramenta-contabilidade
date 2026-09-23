@@ -10,6 +10,12 @@ import streamlit as st
 from fiscal_engine.assessment.service import assess_batch
 
 
+def _money(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _company_rows(companies: list[dict]) -> list[dict]:
     return [
         {
@@ -24,6 +30,14 @@ def _company_rows(companies: list[dict]) -> list[dict]:
 def _details(companies: list[dict]) -> None:
     for item in companies:
         with st.expander(item["company"]["name"]):
+            summary_values = item["assessment"]["source_values"].get("RESUMO_ACUMULADORES", {})
+            summary = summary_values.get("accumulatorSummary")
+            if summary:
+                st.write({
+                    "Saídas totais": _money(summary.get("outgoingTotal")),
+                    "Devolução de compras": _money(summary.get("purchaseReturns")),
+                    "Vendas consideradas": _money(summary_values.get("revenue", {}).get("currentPeriod")),
+                })
             for finding in item["findings"]:
                 st.markdown(f"**{finding['code']}** — {finding['message']}")
                 if finding["expected"] is not None or finding["actual"] is not None:
@@ -74,7 +88,7 @@ def simples_assessment_page(fixtures: Path) -> None:
             help="Ex.: /dados/dominio/2026-08. Cada empresa deve ficar em sua própria subpasta.",
         )
         period_value = st.text_input("Competência (AAAA-MM)", value=fixtures.name)
-        st.caption("Aceita os PDFs `Simples Nacional` e `Demonstrativo Mensal` do Domínio. Para várias empresas, use uma subpasta por empresa.")
+        st.caption("Relatórios necessários: Simples Nacional, Demonstrativo Mensal e Resumo por Acumulador. O extrato do PGDAS-D e a guia DAS são opcionais, para conferência após a transmissão. Para várias empresas, use uma subpasta por empresa.")
         submitted = st.form_submit_button("Analisar relatórios", type="primary")
     if submitted:
         try:
@@ -104,6 +118,7 @@ def simples_assessment_page(fixtures: Path) -> None:
     st.subheader("Sem exceções detectadas · priorizar entrega")
     st.caption("Estes relatórios não tiveram exceções nas regras executadas. A decisão de entrega continua sendo da equipe responsável.")
     st.dataframe(_company_rows(ready), hide_index=True, width="stretch")
+    _details(ready)
 
     st.subheader("Fila de revisão")
     if review:

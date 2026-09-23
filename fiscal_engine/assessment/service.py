@@ -9,6 +9,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+
 from .extractors import extract
 from .models import (AssessmentStatus, CompanyTaxAssessment, DocumentType, ExtractionStatus,
                      SourceDocument, ValidationFinding)
@@ -36,8 +39,24 @@ def _report_type(path: Path) -> DocumentType | None:
     for stem, document_type in NAME_TO_TYPE.items():
         if name == f"{stem}.pdf" or name == f"{stem}.json" or name == f"{stem}.synthetic.json":
             return document_type
+    if path.suffix.lower() != ".pdf":
+        return None
+    try:
+        first_page = PdfReader(path).pages[0].extract_text() or ""
+    except (OSError, ValueError, IndexError, PdfReadError):
+        return None
+    heading = first_page.upper()
+    if "RESUMO POR ACUMULADOR" in heading:
+        return DocumentType.RESUMO_ACUMULADORES
+    if "DEMONSTRATIVO MENSAL" in heading:
+        return DocumentType.FATURAMENTO_SIMPLES
+    if "EXTRATO DO SIMPLES NACIONAL" in heading:
+        return DocumentType.PGDAS_EXTRATO
+    if "DOCUMENTO DE ARRECADA" in heading and "SIMPLES NACIONAL" in heading:
+        return DocumentType.DAS_GUIA
+    if "SIMPLES NACIONAL" in heading and "RECEITA TRIBUTADA TOTAL" in heading:
+        return DocumentType.SIMPLES_APURACAO
     return None
-
 
 def discover_sources(input_dir: Path) -> dict[str, list[SourceDocument]]:
     """Encontra relatórios conhecidos em subpastas ou em uma pasta de empresa."""

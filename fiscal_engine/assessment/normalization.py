@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .extractors import PartialAssessment
-from .models import CompanyTaxAssessment, ExtractionStatus
+from .models import CompanyTaxAssessment, DocumentType, ExtractionStatus
 
 
 def _number(value: object) -> float | None:
@@ -27,7 +27,10 @@ def normalize(partials: list[PartialAssessment], fallback_company: dict[str, str
     sources = []
     identified_company: dict[str, str] = {}
 
-    for partial in partials:
+    priority = {DocumentType.SIMPLES_APURACAO: 0, DocumentType.FATURAMENTO_SIMPLES: 1,
+                DocumentType.RESUMO_ACUMULADORES: 2, DocumentType.PGDAS_EXTRATO: 3,
+                DocumentType.DAS_GUIA: 4}
+    for partial in sorted(partials, key=lambda item: priority.get(item.source.document_type, 99)):
         source = partial.source
         sources.append(source)
         statuses.append(partial.extraction_status)
@@ -39,6 +42,8 @@ def normalize(partials: list[PartialAssessment], fallback_company: dict[str, str
                     value = str(value)
                     if key in identified_company and identified_company[key] != value:
                         warnings.append(f"Divergência de {key} entre os relatórios da empresa.")
+                        source.extraction_status = ExtractionStatus.PARTIAL
+                        statuses[-1] = ExtractionStatus.PARTIAL
                     elif key not in identified_company:
                         company[key] = value
                         identified_company[key] = value

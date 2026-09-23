@@ -19,6 +19,7 @@ from .models import DocumentType
 
 MONEY = r"\d{1,3}(?:\.\d{3})*,\d{2}"
 NUMBER = r"\d+(?:\.\d{3})*,\d+"
+CNPJ = r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"
 MONTHS = (
     "Janeiro", "Fevereiro", "Mar.o", "Abril", "Maio", "Junho",
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -39,7 +40,7 @@ def _required(text: str, pattern: str, field: str, flags: int = re.IGNORECASE | 
 def _identity(text: str) -> dict[str, str]:
     name = _required(text, r"Empresa:\s*([^\r\n]+)", "empresa").group(1).strip()
     name = re.split(r"\s{2,}", name, maxsplit=1)[0].strip()
-    cnpj = _required(text, r"CNPJ:\s*(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})", "CNPJ").group(1)
+    cnpj = _required(text, rf"CNPJ:\s*({CNPJ})", "CNPJ").group(1)
     return {"id": re.sub(r"\D", "", cnpj), "name": name, "document": cnpj}
 
 
@@ -140,4 +141,138 @@ def parse_pdf(path: Path, document_type: DocumentType, expected_period: str | No
         return parse_simples_pages(pages, expected_period)
     if document_type == DocumentType.FATURAMENTO_SIMPLES:
         return parse_monthly_pages(pages, expected_period)
-    raise ValueError("PDF de resumo por acumulador ainda não teve layout validado")
+    if document_type == DocumentType.RESUMO_ACUMULADORES:
+        return parse_summary_pages(pages, expected_period)
+    if document_type == DocumentType.PGDAS_EXTRATO:
+        return parse_pgdas_pages(pages, expected_period)
+    if document_type == DocumentType.DAS_GUIA:
+        return parse_das_pages(pages, expected_period)
+    raise ValueError("Tipo de PDF sem layout validado")
+
+
+def _summary_classification(section: str, description: str) -> str:
+    label = description.upper()
+    if "DEVOLU" in label and "COMPR" in label:
+        return "purchase_return"
+    if "DEVOLU" in label and ("VENDA" in label or "REVEND" in label):
+        return "sales_return"
+    if section == "ENTRADAS":
+        return "entry"
+    if "REVENDA" in label or label.startswith("VENDA") or "PRESTACAO DE SERV" in label:
+        return "revenue"
+    return "unclassified"
+
+
+def parse_summary_pages(pages: list[str], expected_period: str | None) -> tuple[dict, str, dict, list[str]]:
+    candidates = [page for page in pages if "RESUMO POR ACUMULADOR" in page]
+    if not candidates:
+        raise ValueError("Pagina do Resumo por Acumulador nao encontrada")
+    entries: list[dict] = []
+    totals: dict[str, Decimal] = {}
+    company: dict[str, str] | None = None
+    period: str | None = None
+    warnings: list[str] = []
+    for page in candidates:
+        lines = [line.strip() for line in page.splitlines() if line.strip()]
+        cnpj = _required(page, rf"CNPJ:\s*({CNPJ})", "CNPJ").group(1)
+        name = re.split(r"\s{2,}", lines[0], maxsplit=1)[0].strip()
+        page_company = {"id": re.sub(r"\D", "", cnpj), "name": name, "document": cnpj}
+        dates = _required(page, r"Per[^:\r\n]{1,10}:\s*(\d{2})/(\d{2})/(\d{4})\s+[^\d\r\n]+\s+(\d{2})/(\d{2})/(\d{4})", "periodo")
+        page_period = f"{dates.group(3)}-{dates.group(2)}"
+        if (dates.group(2), dates.group(3)) != (dates.group(5), dates.group(6)):
+            raise ValueError("Resumo por Acumulador abrange mais de uma competencia")
+        if expected_period is not None and page_period != expected_period:
+            raise ValueError(f"Resumo por Acumulador da competencia {page_period}; esperado {expected_period}")
+        if company is not None and company["id"] != page_company["id"]:
+            raise ValueError("Resumo por Acumulador contem empresas diferentes")
+        company, period = page_company, page_period
+        section = None
+        for line in lines:
+            if line == "ENTRADAS":
+                section = "ENTRADAS"
+                continue
+            if re.fullmatch(r"SA.DAS", line):
+                section = "SAIDAS"
+                continue
+            if section is None:
+                continue
+            total_match = re.match(rf"Total:\s*({MONEY})", line)
+            if total_match:
+                totals[section] = _decimal(total_match.group(1))
+                section = None
+                continue
+            row = re.match(rf"^((?:\d+\s+)+)(.*?)({MONEY})(?=\s|$)", line)
+            if not row:
+                continue
+            codes = re.findall(r"\d+", row.group(1))
+            code = codes[-1]
+            description = row.group(2).strip()
+            if not description:
+                continue
+            entries.append({
+                "code": code,
+                "description": description,
+                "section": section,
+                "amount": float(_decimal(row.group(3))),
+                "classification": _summary_classification(section, description),
+            })
+    if not entries or company is None or period is None:
+        raise ValueError("Acumuladores nao encontrados no resumo")
+    for section in ("ENTRADAS", "SAIDAS"):
+        if section not in totals:
+            raise ValueError(f"Total de {section.lower()} nao encontrado no resumo")
+        listed = sum((Decimal(str(item["amount"])) for item in entries if item["section"] == section), Decimal(0))
+        if listed != totals[section]:
+            warnings.append(f"A soma das linhas de {section.lower()} nao coincide com o total do resumo.")
+    unclassified = [item["code"] for item in entries if item["classification"] in {"unclassified", "sales_return"}]
+    if unclassified:
+        warnings.append(f"Saidas que exigem revisao do faturamento: {', '.join(unclassified)}.")
+    revenue = sum((Decimal(str(item["amount"])) for item in entries if item["classification"] == "revenue"), Decimal(0))
+    purchase_returns = sum((Decimal(str(item["amount"])) for item in entries if item["classification"] == "purchase_return"), Decimal(0))
+    values = {
+        "revenue": {"currentPeriod": float(revenue)},
+        "accumulators": entries,
+        "accumulatorSummary": {
+            "entriesTotal": float(totals["ENTRADAS"]),
+            "outgoingTotal": float(totals["SAIDAS"]),
+            "purchaseReturns": float(purchase_returns),
+        },
+    }
+    return company, period, values, warnings
+
+
+def parse_pgdas_pages(pages: list[str], expected_period: str | None) -> tuple[dict, str, dict, list[str]]:
+    first = next((page for page in pages if "Extrato do Simples Nacional" in page), None)
+    if first is None:
+        raise ValueError("Extrato do PGDAS-D nao encontrado")
+    name = _required(first, r"Nome Empresarial:\s*([^\r\n]+)", "nome empresarial").group(1).strip()
+    name = re.split(r"\s{2,}", name, maxsplit=1)[0].strip()
+    cnpj = _required(first, rf"CNPJ Estabelecimento:\s*({CNPJ})", "CNPJ do estabelecimento").group(1)
+    period_match = _required(first, r"\(PA\):\s*(\d{2})/(\d{4})", "competencia")
+    period = f"{period_match.group(2)}-{period_match.group(1)}"
+    if expected_period is not None and period != expected_period:
+        raise ValueError(f"Extrato do PGDAS-D da competencia {period}; esperado {expected_period}")
+    current = _decimal(_required(first, rf"Receita Bruta do PA \(RPA\)[^\r\n]*?({MONEY})", "receita do PGDAS-D").group(1))
+    rbt12 = _decimal(_required(first, rf"Receita bruta acumulada nos doze meses anteriores ao PA\s+({MONEY})", "RBT12 do PGDAS-D").group(1))
+    das_page = next((page for page in pages if "Principal" in page and "Total" in page and "INSS/CPP" in page), None)
+    if das_page is None:
+        raise ValueError("Total do DAS nao encontrado no extrato do PGDAS-D")
+    total = _decimal(_required(das_page, rf"Principal\s+{MONEY}\s+Multa\s+{MONEY}\s+Juros\s+{MONEY}\s+Total\s+({MONEY})", "total do DAS no PGDAS-D").group(1))
+    company = {"id": re.sub(r"\D", "", cnpj), "name": name, "document": cnpj}
+    return company, period, {"revenue": {"currentPeriod": float(current), "rbt12": float(rbt12)},
+                             "simples": {"calculatedAmount": float(total)}}, []
+
+
+def parse_das_pages(pages: list[str], expected_period: str | None) -> tuple[dict, str, dict, list[str]]:
+    first = next((page for page in pages if "Documento de Arrecada" in page), None)
+    if first is None:
+        raise ValueError("Guia DAS nao encontrada")
+    match = _required(first, rf"^\s*({CNPJ})\s+([^\r\n]+)", "empresa na guia DAS", re.MULTILINE)
+    cnpj, name = match.group(1), match.group(2).strip()
+    period_match = _required(first, r"(?m)^\s*(0[1-9]|1[0-2])/(\d{4})\s*$", "competencia da guia DAS")
+    period = f"{period_match.group(2)}-{period_match.group(1)}"
+    if expected_period is not None and period != expected_period:
+        raise ValueError(f"Guia DAS da competencia {period}; esperado {expected_period}")
+    total = _decimal(_required(first, rf"Valor Total do Documento\s+({MONEY})", "valor da guia DAS").group(1))
+    company = {"id": re.sub(r"\D", "", cnpj), "name": name, "document": cnpj}
+    return company, period, {"simples": {"calculatedAmount": float(total)}}, []

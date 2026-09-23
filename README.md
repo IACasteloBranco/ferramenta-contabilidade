@@ -44,7 +44,7 @@ A estrutura para várias empresas é:
     resumo_acumuladores.pdf
 ```
 
-Para uma única empresa, também é possível informar diretamente a pasta que contém os PDFs e preencher a competência na tela. Os nomes `Simples Nacional.pdf` e `Demonstrativo Mensal.pdf`, usados pelo Domínio, são reconhecidos. O primeiro fornece receita, RBT12, anexos, segregações e valor apurado; o segundo fornece saídas e serviços do mês. O `Resumo por Acumulador.pdf` continua pendente de validação de layout, portanto sua ausência leva a empresa à fila de revisão. Extrato do PGDAS-D e guia DAS ainda não participam das regras automáticas.
+Para uma empresa, informe a pasta com os PDFs e a competência na tela. Os três relatórios necessários são Simples Nacional, Demonstrativo Mensal e Resumo por Acumulador do Domínio. O scanner também reconhece, quando já disponíveis após a transmissão, o extrato do PGDAS-D e a guia DAS. O motor compara receita, RBT12 e entradas entre os três relatórios; com os documentos opcionais, também compara os valores declarados e da guia. As linhas de acumuladores são preservadas e devoluções de compras ficam fora das vendas.
 
 ## Linha de comando
 
@@ -63,6 +63,6 @@ npm test
 
 ## Próxima etapa
 
-Validar o leitor com outros PDFs do Domínio e implementar o layout do Resumo por Acumulador quando houver amostra. Veja o checklist em [DOMINIO_BATCH_ASSESSMENT.md](docs/DOMINIO_BATCH_ASSESSMENT.md).
+Validar o leitor com outras empresas, competências e versões dos relatórios; ampliar a classificação dos acumuladores conforme amostras autorizadas. Veja [DOMINIO_BATCH_ASSESSMENT.md](docs/DOMINIO_BATCH_ASSESSMENT.md).
 
 O pipeline sintético anterior de NF-e foi preservado no código para referência e testes, mas não é exposto pela interface desta versão.

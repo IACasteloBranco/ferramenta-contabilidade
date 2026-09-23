@@ -11,5 +11,5 @@ def source_documents_rule(assessment: CompanyTaxAssessment) -> list[ValidationFi
     missing = sorted(document.value for document in REQUIRED_DOCUMENTS - available)
     if not missing:
         return []
-    return [ValidationFinding("SOURCE_DOCUMENT_MISSING", "warning", "Relatório obrigatório não foi recebido para a conferência.",
+    return [ValidationFinding("SOURCE_DOCUMENT_MISSING", "warning", "Relatório necessário do Domínio não foi recebido para a conferência.",
                               "sources", expected=sorted(document.value for document in REQUIRED_DOCUMENTS), actual=sorted(available), sources=missing)]
